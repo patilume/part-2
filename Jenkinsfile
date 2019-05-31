@@ -4,7 +4,7 @@ node {
 	try {
    
    stage ('clone') {
-        	s001_ci_Checkout ()
+        	Checkout ()
         }
 		}
 	
