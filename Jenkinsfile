@@ -1,4 +1,4 @@
-@Library('part-2') _
+@Library('tests') _
   
 node {
 	try {
