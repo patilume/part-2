@@ -1,19 +1,14 @@
- import groovy.json.JsonSlurper
-  import groovy.json.JsonOutput
-  import groovy.json.JsonSlurperClassic
+@Library('part-2') _
   
 node {
-environment {
-        AGENT_INFO = ''
-    }
-
 	try {
    
    stage ('clone') {
-        	checkout scm
+        	s001_ci_Checkout ()
         }
 		}
 	
+	 
 		
 
 catch (err) {
