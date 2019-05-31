@@ -1,0 +1,50 @@
+ import groovy.json.JsonSlurper
+  import groovy.json.JsonOutput
+  import groovy.json.JsonSlurperClassic
+  
+node {
+environment {
+        AGENT_INFO = ''
+    }
+
+	try {
+   
+   stage ('clone') {
+        	checkout scm
+        }
+        stage ('Build') {
+	//println "JSONObject build-parameters GIT_REPO_URL : " + jsonObject.build-parameters.GIT_REPO_URL
+	
+	def json = readFile(file:'test.json')
+        def jsonObject = new JsonSlurperClassic().parseText(json)
+ 	//println "JSONObject build-parameters APP_NAME : " + jsonObject
+	 echo "color: ${jsonObject.jeet.APP_NAME}"
+	 echo "fields- value : ${jsonObject.jeet.GIT_REPO_URL}"
+	 echo "pretext  : ${jsonObject.jeet.APP_GROUP_ID}"
+	 env.AGENT_INFO = jsonObject
+	sh "echo 'shell scripts to run static build...'"
+        }
+        stage ('Tests') {
+	        parallel 'static': {
+	            sh "echo 'shell scripts to run static tests...'"
+		    println "JSONObject build-parameters APP_NAME : " + AGENT_INFO
+	        },
+	        'unit': {
+	            sh "echo 'shell scripts to run unit tests...'"
+	        },
+	        'integration': {
+	            sh "echo 'shell scripts to run integration tests...'"
+	        }
+        }
+      	stage ('Deploy') {
+	println "JSONObject build-parameters APP_NAME : " + AGENT_INFO
+         //   sh "echo 'shell scripts to deploy to server...'"
+	 //   echo "color: ${jsonObject.jeet.APP_NAME}"
+	 //echo "fields- value : ${jsonObject.jeet.GIT_REPO_URL}"
+	 //echo "pretext  : ${jsonObject.jeet.APP_GROUP_ID}"
+      	}
+    } catch (err) {
+        currentBuild.result = 'FAILED'
+        throw err
+    }
+}

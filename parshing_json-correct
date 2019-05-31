@@ -1,0 +1,52 @@
+import groovy.json.JsonSlurper
+  import groovy.json.JsonOutput
+  import groovy.json.JsonSlurperClassic
+ node {
+ def json = readFile(file:'/home/jenkins/tmp/test.json')
+ def jsonObject = new JsonSlurperClassic().parseText(json)
+ properties([
+   parameters([
+    string(name: 'APP_NAME', defaultValue: "${jsonObject.jeet.APP_NAME}", description: 'The target environment',),
+    string(name: 'APP_ARTIFACT_ID', defaultValue: "${jsonObject.jeet.APP_ARTIFACT_ID}", description: 'The target environment', ),
+	string(name: 'APP_GROUP_ID', defaultValue: "${jsonObject.jeet.APP_GROUP_ID}", description: 'The target environment',),
+    string(name: 'APP_COMPONENT_NAME', defaultValue: "${jsonObject.jeet.APP_COMPONENT_NAME}", description: 'The target environment', ),
+	string(name: 'VERSION', defaultValue: "${jsonObject.jeet.VERSION}", description: 'The target environment', ),
+	string(name: 'GIT_REPO_URL', defaultValue: "${jsonObject.jeet.GIT_REPO_URL}", description: 'The target environment', ),
+	string(name: 'UCD_DEPLOY_PROCESS', defaultValue: "${jsonObject.jeet.UCD_DEPLOY_PROCESS}", description: 'The target environment', ),
+	string(name: 'BRANCH', defaultValue: "${jsonObject.jeet.BRANCH}", description: 'The target environment', ),
+	string(name: 'ENV', defaultValue: "${jsonObject.jeet.ENV}", description: 'The target environment',)
+	 ])
+])
+   
+  
+   try {
+   
+   stage ('clone') {
+        	//checkout scm
+        	 echo "stages" 
+        }
+        stage ('Build') {
+         	sh ''' 
+		echo 'shell scripts to build project' 
+		
+		'''
+        }
+        stage ('Tests') {
+	        parallel 'static': {
+	            sh "echo 'shell scripts to run static tests...'"
+	        },
+	        'unit': {
+	            sh "echo 'shell scripts to run unit tests...'"
+	        },
+	        'integration': {
+	            sh "echo 'shell scripts to run integration tests...'"
+	        }
+        }
+      	stage ('Deploy') {
+            sh "echo 'shell scripts to deploy to server...'"
+      	}
+    } catch (err) {
+        currentBuild.result = 'FAILED'
+        throw err
+    }
+}

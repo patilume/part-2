@@ -1,0 +1,508 @@
+	def sonarPreview() {
+           withSonarQubeEnv('sonar-qube-server.cfapps.io') {
+            //mvn "-Dsonar.analysis.mode=preview -Dsonar.github.pullRequest=${prNo} -Dsonar.github.oauth=${githubToken} -Dsonar.github.repository=${repoSlug} -Dsonar.github.endpoint=https://octodemo.com/api/v3/ org.sonarsource.scanner.maven:sonar-maven-plugin:3.2:sonar"
+            sh """
+            /opt/maven/bin/mvn clean package sonar:sonar
+            """
+			
+			
+			
+			import hudson.util.Secret
+
+pipeline {
+    agent { label 'master' }
+
+    parameters {
+        string(name: 'APP_NAME', defaultValue: 'UZ60_PortfolioCalculationService', description: 'UM00 - Proposal')
+        string(name: 'APP_ARTIFACT_ID', defaultValue: 'assetallocation', description: 'Application Artifact ID')
+        string(name: 'APP_GROUP_ID', defaultValue: 'com.rbc.gam', description: 'Application group ID')
+        string(name: 'APP_COMPONENT_NAME', defaultValue: 'UZ60_Asset_Allocation_Service', description: 'UZ60 - Proposal - service')
+        string(name: 'VERSION', defaultValue: '1.0.0', description: 'Application version')
+        string(name: 'GIT_REPO_URL', defaultValue: 'https://bitbucket.org/wiserinvestments/assetallocationservice.git', description: '')
+        string(name: 'UCD_DEPLOY_PROCESS', defaultValue: 'deploy_aa_service', description: '')
+        choice(choices: ['DEV', 'INT', 'ACP'], description: 'UCD Application Environment INT=QA & ACP =UAT', name: 'ENV')
+        string(name: 'BRANCH', defaultValue: 'develop', description: '')
+            }
+    
+    stages { 
+        stage('clean') {
+            steps {
+                deleteDir()
+            }
+        }
+        
+        stage('Checkouts') { 
+            steps{
+              checkouts ()
+             }
+        }
+        
+
+        stage('Build Asset Allocation Service') {
+    		steps {
+    			build_asset ()
+    		}
+    	}
+    	
+    		stage('Prepare artifacts') { 
+            steps {
+                   prepair_artifact ()
+            }
+        }
+    		stage('Publish Service Artifacts TO UCD') {
+            steps {
+                publish_art_ucd ()
+
+            }
+        }
+          stage('Deploy Service to RBC DEV') {
+            steps {
+                    deploy_dev ()
+                }
+            }
+            
+            stage('Test RBC DEV') {
+            steps {
+                    test_dev()
+                }
+            }
+            stage('Deploy Service to RBC INT') {
+            steps {
+                   Deploy_INT() 
+                }
+            }
+			stage('Test RBC INT') {
+            steps {
+                   Test_INT() 
+                }
+            }
+		//	  stage('Deploy Service to RBC UAT') {
+        //    steps {
+        //            Deploy_UAT()
+        //        }
+        //    }
+					
+		//	stage('Test RBC UAT') {
+        //    steps {
+		//			Test_UAT()
+		//		   }
+		//	}
+            
+            
+       }
+    
+    }
+
+    
+    def checkouts () {
+      
+                  checkout([$class: 'GitSCM', branches: [[name: "*/${params.BRANCH}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: 'SubmoduleOption', disableSubmodules: false, parentCredentials: true, recursiveSubmodules: true, reference: '', trackingSubmodules: false]], submoduleCfg: [], userRemoteConfigs: [[credentialsId: 'wiserjenkins', url: params.GIT_REPO_URL]]])
+            
+                      }
+
+    def build_asset (){
+        configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+    				    bat """
+    				        FOR /F %%i IN ('call mvn -s %MAVEN_SETTINGS% -q --non-recursive "-Dexec.executable=cmd" "-Dexec.args=/C echo \${project.version}" "org.codehaus.mojo:exec-maven-plugin:1.3.1:exec"') DO SET VERSION=%%i
+    				        set BUILD_VERSION=%VERSION%_${env.BUILD_NUMBER}
+    				        echo %BUILD_VERSION% > version
+                            call mvn -s ${MAVEN_SETTINGS} versions:set  -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -DnewVersion=%BUILD_VERSION%
+    				        call mvn -B -s ${MAVEN_SETTINGS} -DskipTests -Dmaven.test.skip=true  -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dapp.artifactId='%params.APP_ARTIFACT_ID%' -Dapp.groupId='%params.APP_GROUP_ID%' -DuniqueVersion=false clean package
+    				    """
+    				    script {
+    				     env.VERSION = readFile('version').trim()
+    				    }
+    				    echo "${env.VERSION}"
+                }
+    
+        }
+    def prepair_artifact() {
+            echo "In Prepare artifacts"
+                    sh """
+                        set -e 
+                        set -x
+                        mkdir -p out/target
+                        mv target/${env.APP_ARTIFACT_ID}-${env.VERSION}.war out/target/${env.APP_ARTIFACT_ID}.war
+                        cp manifest*.yml out/
+                    """
+                }
+
+    def publish_art_ucd() {
+            script {
+                        try {
+                            step([
+                                $class: 'UCDeployPublisher',
+                                siteName: 'UCD-PRODUCTION',
+                                component: [
+                                    $class: 'com.urbancode.jenkins.plugins.ucdeploy.VersionHelper$VersionBlock',
+                                    componentName: "${params.APP_COMPONENT_NAME}",
+                                    delivery: [
+                                            $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeliveryHelper$Push',
+                                            pushVersion: "${env.VERSION}",
+                                            baseDir: "${env.WORKSPACE}/out/",
+                                            fileIncludePatterns: "**/*",
+                                            fileExcludePatterns: '',
+                                            pushProperties: '',
+                                            pushDescription: 'Pushed from Jenkins',
+                                            pushIncremental: false
+                                    ]
+                                    ]
+                            ])
+                        } catch(Exception err) {
+                            print err
+                            throw(err)
+                        }
+                }
+    
+        }
+        
+    def deploy_dev () {
+            script {
+                        try {
+                            step([
+                                $class: 'UCDeployPublisher',
+                                siteName: 'UCD-PRODUCTION',
+                                deploy: [
+                                    $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+                                    deployApp: "${params.APP_NAME}",
+                                    deployEnv: "DEV",
+                                    deployProc: "${params.UCD_DEPLOY_PROCESS}",
+                                    deployVersions: "${params.APP_COMPONENT_NAME}:${env.VERSION}",
+                                    deployOnlyChanged: false
+                                ]
+                            ])
+                            currentBuild.result = 'SUCCESS'
+                        } catch (Exception e) {
+                            print e
+                            throw(e)  
+                        }
+                    }
+        }
+        
+        def test_dev(){	
+				configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+                        bat """
+                            call mvn -s ${MAVEN_SETTINGS} -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dprofile=dev -Dsurefire.rerunFailingTestsCount=3 clean test 
+                        """
+                    }
+			}
+		def Deploy_INT(){
+			
+						script {
+                        try {
+                            step([
+                                $class: 'UCDeployPublisher',
+                                siteName: 'UCD-PRODUCTION',
+                                deploy: [
+                                    $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+                                    deployApp: "${params.APP_NAME}",
+                                    deployEnv: "INT",
+                                    deployProc: "${params.UCD_DEPLOY_PROCESS}",
+                                    deployVersions: "${params.APP_COMPONENT_NAME}:${env.VERSION}",
+                                    deployOnlyChanged: false
+                                ]
+                            ])
+                            currentBuild.result = 'SUCCESS'
+                        } catch (Exception e) {
+                            print e
+                            throw(e)  
+                        }
+                    }
+							}
+            
+        
+			
+			
+			def Test_INT(){
+						configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+                        bat """
+                            call mvn -s ${MAVEN_SETTINGS} -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dprofile=int -Dsurefire.rerunFailingTestsCount=3 clean test 
+                        """
+                    }
+						  }
+        
+       
+			def Deploy_UAT(){
+						script {
+                        try {
+                            step([
+                                $class: 'UCDeployPublisher',
+                                siteName: 'UCD-PRODUCTION',
+                                deploy: [
+                                    $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+                                    deployApp: "${params.APP_NAME}",
+                                    deployEnv: "ACP",
+                                    deployProc: "${params.UCD_DEPLOY_PROCESS}",
+                                    deployVersions: "${params.APP_COMPONENT_NAME}:${env.VERSION}",
+                                    deployOnlyChanged: false
+                                ]
+                            ])
+                            currentBuild.result = 'SUCCESS'
+                        } catch (Exception e) {
+                            print e
+                            throw(e)  
+                        }
+							}
+						}
+            
+       
+			
+			def Test_UAT(){
+						 configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+                        bat """
+                            call mvn -U -s ${MAVEN_SETTINGS} -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dprofile=uat -Dsurefire.rerunFailingTestsCount=3 clean test 
+                        """
+						} 
+					 }
+
+
+
+
+
+------------------------------------------
+import hudson.util.Secret
+
+pipeline {
+    agent { label 'master' }
+
+    parameters {
+        string(name: 'APP_NAME', defaultValue: 'UZ60_PortfolioCalculationService', description: 'UM00 - Proposal')
+        string(name: 'APP_ARTIFACT_ID', defaultValue: 'assetallocation', description: 'Application Artifact ID')
+        string(name: 'APP_GROUP_ID', defaultValue: 'com.rbc.gam', description: 'Application group ID')
+        string(name: 'APP_COMPONENT_NAME', defaultValue: 'UZ60_Asset_Allocation_Service', description: 'UZ60 - Proposal - service')
+        string(name: 'VERSION', defaultValue: '1.0.0', description: 'Application version')
+        string(name: 'GIT_REPO_URL', defaultValue: 'https://bitbucket.org/wiserinvestments/assetallocationservice.git', description: '')
+        string(name: 'UCD_DEPLOY_PROCESS', defaultValue: 'deploy_aa_service', description: '')
+        choice(choices: ['DEV', 'INT', 'ACP'], description: 'UCD Application Environment INT=QA & ACP =UAT', name: 'ENV')
+        string(name: 'BRANCH', defaultValue: 'develop', description: '')
+            }
+    
+    stages { 
+        stage('clean') {
+            steps {
+                deleteDir()
+            }
+        }
+        
+        stage('Checkouts') { 
+            steps{
+              checkouts ()
+             }
+        }       
+
+       // stage('Build Asset Allocation Service') {
+    //		steps {
+    //			build_asset ()
+    //		}
+    //	}
+		stage('Sonar Preview') { 
+            steps {
+                   sonarPreview ()
+            }
+        }
+		//stage('Prepare artifacts') { 
+        //    steps {
+        //           prepair_artifact ()
+        //    }
+        //}
+    	//stage('Publish Service Artifacts TO UCD') {
+        //    steps {
+        //        publish_art_ucd ()
+		//		}
+        //}
+        //stage('Deploy Service to RBC DEV') {
+        //    steps {
+        //            deploy_dev ()
+        //        }
+        //    }
+            
+        //stage('Test RBC DEV') {
+        //    steps {
+        //            test_dev()
+        //        }
+        //    }
+        //stage('Deploy Service to RBC INT') {
+        //    steps {
+        //           Deploy_INT() 
+        //        }
+        //    }
+		//stage('Test RBC INT') {
+        //    steps {
+        //           Test_INT() 
+        //        }
+        //    }
+		//stage('Deploy Service to RBC UAT') {
+        //    steps {
+        //         Deploy_UAT()
+        //        }
+        //    }
+		//stage('Test RBC UAT') {
+        //    steps {
+		//			Test_UAT()
+		//		   }
+		//	}
+        
+       }
+    
+    }
+
+    
+    def checkouts () {
+      
+        checkout([$class: 'GitSCM', branches: [[name: "*/${params.BRANCH}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: 'SubmoduleOption', disableSubmodules: false, parentCredentials: true, recursiveSubmodules: true, reference: '', trackingSubmodules: false]], submoduleCfg: [], userRemoteConfigs: [[credentialsId: 'wiserjenkins', url: params.GIT_REPO_URL]]])
+                     }
+
+    def build_asset (){
+        configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+    		bat """
+    		    FOR /F %%i IN ('call mvn -s %MAVEN_SETTINGS% -q --non-recursive "-Dexec.executable=cmd" "-Dexec.args=/C echo \${project.version}" "org.codehaus.mojo:exec-maven-plugin:1.3.1:exec"') DO SET VERSION=%%i
+					set BUILD_VERSION=%VERSION%_${env.BUILD_NUMBER}
+    				echo %BUILD_VERSION% > version
+                    call mvn -s ${MAVEN_SETTINGS} versions:set  -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -DnewVersion=%BUILD_VERSION%
+    				call mvn -B -s ${MAVEN_SETTINGS} -DskipTests -Dmaven.test.skip=true  -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dapp.artifactId='%params.APP_ARTIFACT_ID%' -Dapp.groupId='%params.APP_GROUP_ID%' -DuniqueVersion=false clean package
+    			"""
+    			script {
+    			    env.VERSION = readFile('version').trim()
+						}
+    				echo "${env.VERSION}"
+                }
+            }
+    def prepair_artifact() {
+        echo "In Prepare artifacts"
+            sh """
+                set -e 
+                set -x
+                mkdir -p out/target
+                mv target/${env.APP_ARTIFACT_ID}-${env.VERSION}.war out/target/${env.APP_ARTIFACT_ID}.war
+                cp manifest*.yml out/
+             """
+            }
+
+    def publish_art_ucd() {
+        script {
+                try {
+                    step([
+                        $class: 'UCDeployPublisher',
+                        siteName: 'UCD-PRODUCTION',
+                        component: [
+                        $class: 'com.urbancode.jenkins.plugins.ucdeploy.VersionHelper$VersionBlock',
+                        componentName: "${params.APP_COMPONENT_NAME}",
+                        delivery: [
+                                    $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeliveryHelper$Push',
+                                    pushVersion: "${env.VERSION}",
+                                    baseDir: "${env.WORKSPACE}/out/",
+                                    fileIncludePatterns: "**/*",
+                                    fileExcludePatterns: '',
+                                    pushProperties: '',
+                                    pushDescription: 'Pushed from Jenkins',
+                                    pushIncremental: false
+                                    ] ]  ])
+                } catch(Exception err) {
+                        print err
+                        throw(err)
+                        }
+                }
+    
+			}
+        
+    def deploy_dev () {
+        script {
+                try {
+                    step([
+                         $class: 'UCDeployPublisher',
+                         siteName: 'UCD-PRODUCTION',
+                         deploy: [
+                             $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+                             deployApp: "${params.APP_NAME}",
+                             deployEnv: "DEV",
+                             deployProc: "${params.UCD_DEPLOY_PROCESS}",
+                             deployVersions: "${params.APP_COMPONENT_NAME}:${env.VERSION}",
+                             deployOnlyChanged: false
+                         ]  ])
+                         currentBuild.result = 'SUCCESS'
+                        }
+				catch (Exception e) {
+                       print e
+                       throw(e)  
+                        }
+                    }
+			}
+        
+        def test_dev(){	
+			configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+                bat """
+                    call mvn -s ${MAVEN_SETTINGS} -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dprofile=dev -Dsurefire.rerunFailingTestsCount=3 clean test 
+                    """
+                    }
+			}
+		def Deploy_INT(){
+				script {
+                    try {
+                      step([
+                          $class: 'UCDeployPublisher',
+                          siteName: 'UCD-PRODUCTION',
+                          deploy: [
+                              $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+                              deployApp: "${params.APP_NAME}",
+                              deployEnv: "INT",
+                              deployProc: "${params.UCD_DEPLOY_PROCESS}",
+                              deployVersions: "${params.APP_COMPONENT_NAME}:${env.VERSION}",
+                              deployOnlyChanged: false
+                          ] ])
+                        currentBuild.result = 'SUCCESS'
+                        } 
+					catch (Exception e) {
+                        print e
+                        throw(e)  
+                        }
+                    }
+				}
+        def Test_INT(){
+			configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+                bat """
+                    call mvn -s ${MAVEN_SETTINGS} -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dprofile=int -Dsurefire.rerunFailingTestsCount=3 clean test 
+                    """
+                    }
+				}
+        def Deploy_UAT(){
+				script {
+                    try {
+                       step([
+                           $class: 'UCDeployPublisher',
+                           siteName: 'UCD-PRODUCTION',
+                           deploy: [
+                               $class: 'com.urbancode.jenkins.plugins.ucdeploy.DeployHelper$DeployBlock',
+                               deployApp: "${params.APP_NAME}",
+                               deployEnv: "ACP",
+                               deployProc: "${params.UCD_DEPLOY_PROCESS}",
+                               deployVersions: "${params.APP_COMPONENT_NAME}:${env.VERSION}",
+                               deployOnlyChanged: false
+                           ]
+                       ])
+                    currentBuild.result = 'SUCCESS'
+                      }
+    				 catch (Exception e) {
+                        print e
+                        throw(e)  
+                        }
+					}
+				}
+        def Test_UAT(){
+			 //configFileProvider([configFile(fileId: 'maven-global-settings.xml', variable: 'MAVEN_SETTINGS')]) {
+             
+			// configFileProvider([configFile(variable: 'MAVEN_SETTINGS')]) {
+                bat """
+                   call mvn -U  -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dprofile=uat -Dsurefire.rerunFailingTestsCount=3 clean test 
+                    """
+					} 
+			//	}
+		def sonarPreview() {
+           withSonarQubeEnv('sonar-qube-server.cfapps.io') {
+            //mvn "-Dsonar.analysis.mode=preview -Dsonar.github.pullRequest=${prNo} -Dsonar.github.oauth=${githubToken} -Dsonar.github.repository=${repoSlug} -Dsonar.github.endpoint=https://octodemo.com/api/v3/ org.sonarsource.scanner.maven:sonar-maven-plugin:3.2:sonar"
+            sh """
+            /opt/maven/bin/mvn clean package sonar:sonar
+            """
+               
+           }
+        }
+    

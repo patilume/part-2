@@ -1,0 +1,40 @@
+import hudson.util.Secret
+
+node ('maven') {
+    
+   
+
+    parameters {
+       string(name: 'APP_NAME', defaultValue: 'UZ60_PortfolioCalculationService', description: 'UM00 - Proposal')
+       string(name: 'APP_ARTIFACT_ID', defaultValue: 'assetallocation', description: 'Application Artifact ID')
+       string(name: 'APP_GROUP_ID', defaultValue: 'com.rbc.gam', description: 'Application group ID')
+       string(name: 'APP_COMPONENT_NAME', defaultValue: 'UZ60_Asset_Allocation_Service', description: 'UM00 - Proposal - service')
+       string(name: 'VERSION', defaultValue: '1.0.0', description: 'Application version')
+       string(name: 'GIT_REPO_URL', defaultValue: 'https://github.com/jeettest2/testprojectUSER.git', description: '')
+       string(name: 'ENV', description: 'UCD Application Environment INT=QA & ACP =UAT', defaultValue: 'DEV')
+       string(name: 'BRANCH', defaultValue: 'develop', description: '')
+    }
+    
+     
+        stage('Checkout') { 
+            checkout([$class: 'GitSCM', branches: [[name: "*/${params.BRANCH}"]], doGenerateSubmoduleConfigurations: false, extensions: [[$class: 'SubmoduleOption', disableSubmodules: false, parentCredentials: true, recursiveSubmodules: true, reference: '', trackingSubmodules: false]], submoduleCfg: [], userRemoteConfigs: [[credentialsId: 'wiserjenkins', url: params.GIT_REPO_URL]]])
+                }
+    
+   //stage('Build Asset Allocation Service') {
+   //		steps {
+   //			configFileProvider([configFile(fileId: 'maven-settings', variable: 'MAVEN_SETTINGS')]) {
+   //			        script {
+   //    				     pom = readMavenPom file: 'pom.xml'
+   //    				     env.VERSION = pom.version+"_"+env.BUILD_NUMBER
+   //    				     echo "${env.VERSION}"
+   //				    }
+   //				    sh """
+   //				        mvn -s ${MAVEN_SETTINGS} -DskipTests  -Dmaven.wagon.http.ssl.insecure=true -Dmaven.wagon.http.ssl.allowall=true -Dmaven.wagon.http.ssl.ignore.validity.dates=true -Dapp.artifactId=${params.APP_ARTIFACT_ID} -Dapp.groupId=${params.APP_GROUP_ID}  clean package
+   //				        """
+   //				        }
+   //		
+   //		
+   //		}
+   //}
+    	//}
+}
