@@ -6,9 +6,13 @@ node {
    stage ('clone') {
         	Checkout ()
         }
+		stage ('Build') {
+		buildmaven ()
 		}
 	
-	 
+	}
+	
+
 		
 
 catch (err) {
