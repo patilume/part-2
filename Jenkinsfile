@@ -3,14 +3,14 @@
 node {
 	try {
    
-   stage ('clone') {
+  // stage ('clone') {
         	Checkout ()
 	   //checkout scm
-        }
-		stage ('Build') {
+    //    }
+	//	stage ('Build') {
 		//sh '/opt/maven/bin/mvn clean install -Dskiptest'
 			buildmaven ()
-		}
+	//	}
 	
 	}
 	
