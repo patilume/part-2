@@ -7,7 +7,8 @@ node {
         	Checkout ()
         }
 		stage ('Build') {
-		buildmaven ()
+		sh '/opt/maven/bin/mvn clean install -Dskiptest'
+			//buildmaven ()
 		}
 	
 	}
