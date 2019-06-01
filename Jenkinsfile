@@ -1,15 +1,15 @@
-//@Library('tests') _
+@Library('tests') _
   
 node {
 	try {
    
    stage ('clone') {
-        	//Checkout ()
-	   checkout scm
+        	Checkout ()
+	   //checkout scm
         }
 		stage ('Build') {
-		sh '/opt/maven/bin/mvn clean install -Dskiptest'
-			//buildmaven ()
+		//sh '/opt/maven/bin/mvn clean install -Dskiptest'
+			buildmaven ()
 		}
 	
 	}
