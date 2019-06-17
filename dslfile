@@ -1,0 +1,148 @@
+job('DSL-Tutorial-1-Test') {
+    scm {
+        git('https://github.com/jeettest2/part-2.git',"master")
+    }
+   //triggers {
+     //   cron("@hourly")
+   //}
+  triggers {
+        cron("@now")
+  }
+    steps {
+        maven(' -e clean test')
+    }
+}
+def project = 'quidryan/aws-sdk-test'
+def branchApi = new URL("https://api.github.com/repos/${project}/branches")
+def branches = new groovy.json.JsonSlurper().parse(branchApi.newReader())
+branches.each {
+    def branchName = it.name
+    def jobName = "${project}-${branchName}".replaceAll('/','-')
+    job(jobName) {
+        scm {
+            git("git://github.com/${project}.git", branchName)
+        }
+        steps {
+            maven("test -Dproject.name=${project}/${branchName}")
+        }
+    }
+}
+-------------------------------------------
+BASE_STEPS = '''#!/bin/bash
+mkdir -p ~/.foremast
+aws s3 sync s3://example-bucket/ . --exclude "*" --include "foremast.cfg"
+virtualenv -p python3 venv
+. venv/bin/activate
+pip install -U --quiet foremast==3.10.1
+'''
+APP_STEPS = BASE_STEPS + '''
+prepare-app-pipeline
+'''
+
+def emailTrigger = {
+    trigger {
+        email {
+            recipientList '$PROJECT_DEFAULT_RECIPIENTS'
+            subject '$PROJECT_DEFAULT_SUBJECT'
+            body '$PROJECT_DEFAULT_CONTENT'
+            sendToDevelopers true
+            sendToRequester false
+            includeCulprits false
+            sendToRecipientList true
+        }
+    }
+}
+job("foremast-pipeline-prepare") {
+  parameters {
+    stringParam('APP', '', 'Application name')
+    stringParam('EMAIL', 'admin@example.com', 'Associated email')
+    stringParam('PROJECT', 'None', 'Git project associated with application')
+    stringParam('GIT_REPO', 'None', 'The repository name to associate with application')
+  }
+configure { project ->
+    project / publishers << 'hudson.plugins.emailext.ExtendedEmailPublisher' {
+              recipientList 'Engineering@company.com'
+              configuredTriggers {
+                  'hudson.plugins.emailext.plugins.trigger.FailureTrigger' emailTrigger
+                  'hudson.plugins.emailext.plugins.trigger.FixedTrigger' emailTrigger
+              }
+              contentType 'default'
+              defaultSubject '$DEFAULT_SUBJECT'
+              defaultContent '$DEFAULT_CONTENT'
+}
+}
+  
+  
+
+logRotator {
+    numToKeep(2)
+    artifactNumToKeep(2)
+  }
+scm {
+    git {
+      remote {
+        url("git@git.example.com:spinnaker/foremast-templates.git")
+        credentials('-none-')
+      }
+      extensions {
+        relativeTargetDirectory('foremast-templates')
+        }
+      branch('*/master')
+    }
+  }
+  
+label('master')
+steps {
+    shell(APP_STEPS)
+  }
+  
+wrappers {
+    colorizeOutput()
+  }
+}
+
+if (jenkins.model.Jenkins.instance.getItemByFullName('foremast-pipeline-prepare')) {
+    queue('quidryan-aws-sdk-test-feature1')
+}
+-----------------------
+job('example') {
+    scm {
+        cvsscm {
+            repositories {
+                cvsRepository {
+                    cvsRoot(':pserver:username@hostname:/opt/path/to/a/repo')
+                    passwordRequired(false)
+                    password(null)
+                    compressionLevel(-1)
+                    repositoryBrowser {}
+                    repositoryItems {
+                        cvsRepositoryItem {
+                            modules {
+                                cvsModule {
+                                    localName('bar')
+                                    projectsetFileName('bar')
+                                    remoteName('foo')
+                                }
+                            }
+                            location {
+                                tagRepositoryLocation {
+                                    tagName('test')
+                                    useHeadIfNotFound(false)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            canUseUpdate(true)
+            pruneEmptyDirectories(true)
+            legacy(false)
+            skipChangeLog(false)
+            disableCvsQuiet(false)
+            cleanOnFailedUpdate(false)
+            forceCleanCopy(false)
+        }
+    }
+}
+
+
