@@ -1,0 +1,16 @@
+pipeline {
+    agent any
+	
+    stages {
+        stage('Build') {
+		
+			when{
+				changeset glob: "*jeet.js", caseSensitive: true
+			}
+		
+            steps {                
+                echo 'Hello World changeset JS'
+            }
+        }
+    }
+}
